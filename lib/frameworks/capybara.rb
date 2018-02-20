@@ -3,6 +3,7 @@ require 'capybara/cucumber'
 require 'capybara/mechanize'
 require 'capybara/poltergeist'
 require 'selenium-webdriver'
+require 'appium_capybara'
 
 # Register drivers
 class CapybaraSetup
@@ -71,15 +72,6 @@ class CapybaraSetup
     # always register in case we are using a configuration that swaps between drivers
     mech_driver = register_mechanize_driver(capybara_opts)
     poltergeist_driver = register_poltergeist_driver(capybara_opts)
-    case capybara_opts[:browser]
-    when :mechanize then
-      @driver = mech_driver
-    when :poltergeist then
-      @driver = poltergeist_driver
-    else
-      @driver = register_selenium_driver(capybara_opts, selenium_remote_opts, custom_opts)
-    end
-
     appium_driver = register_appium_driver(capybara_opts, selenium_remote_opts, custom_opts)
     case capybara_opts[:browser]
     when :mechanize then
@@ -136,6 +128,27 @@ class CapybaraSetup
     # return profile
   end
 
+  def register_appium_driver(capybara_opts, selenium_remote_opts, custom_opts)
+    desired_caps_android = {
+      platform:        "Android",
+      deviceName:      "Nexus",
+      platformName:    "Android", 
+      browserName:     "chrome"
+    }
+    Capybara.register_driver(:appium) do |app|
+      appium_lib_options = {
+        server_url:           "http://localhost:#{ENV[APPIUM_PORT]}/wd/hub"
+      }
+      all_options = {
+        appium_lib:  appium_lib_options,
+        caps:        desired_caps_android
+      }
+      Appium::Capybara::Driver.new app, all_options
+    end
+    :appium
+  end
+
+
   def register_selenium_driver(opts, remote_opts, custom_opts)
     Capybara.register_driver :selenium do |app|
       if opts[:firefox_prefs] || opts[:profile]
@@ -148,7 +161,7 @@ class CapybaraSetup
 
       opts[:switches] = [opts.delete(:chrome_switches)] if opts[:chrome_switches]
 
-      if opts[:browser] == :chrome
+      if opts[:browser] == :remote
         client = Selenium::WebDriver::Remote::Http::Default.new
         client.proxy = set_client_proxy(opts)
 
@@ -172,25 +185,6 @@ class CapybaraSetup
     end
     :selenium
   end
-
-  def register_appium_driver(capybara_opts, selenium_remote_opts, custom_opts)
-    desired_caps_android = {
-      deviceName: ENV['ADB_DEVICE_ARG'],
-      platformName: "Android", 
-      browserName: ENV['BROWSER']
-    }
-    Capybara.register_driver(:appium) do |app|
-      appium_lib_options = {
-        server_url: "http://localhost/#{ENV[APPIUM_PORT]}/wd/hub"
-      }
-      all_options = {
-        appium_lib: appium_lib_options,
-        caps: desired_caps_android
-      }
-      Appium::Capybara::Driver.new app, all_options
-    end
-    :appium
-  end    
 
   def add_custom_caps(_caps, custom_opts)
     custom_opts.delete(:max_duration).to_i # note nil.to_i == 0
@@ -245,6 +239,7 @@ class CapybaraSetup
     profile
   end
 
+  
   def register_mechanize_driver(_opts)
     # Mechanize needs a Rack application: create a dummy one
     app = Proc.new do |env|
